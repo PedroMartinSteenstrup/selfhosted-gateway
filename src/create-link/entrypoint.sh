@@ -16,7 +16,8 @@ export CONTAINER_NAME=$(echo $LINK_DOMAIN|python3 -c 'fqdn=input();print("-".joi
 
 
 LINK_CLIENT_WG_PUBKEY=$(echo $WG_PRIVKEY|wg pubkey)
-LINK_ENV=$(ssh $SSH_HOST "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY)
+#LINK_ENV=$(ssh $SSH_HOST "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY)
+LINK_ENV=$(ssh $SSH_HOST -p 2220 -i /root/.ssh/raspi2staging "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY)
 
 # convert to array
 RESULT=($LINK_ENV)
