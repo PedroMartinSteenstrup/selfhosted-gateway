@@ -4,7 +4,7 @@ ARG RELEASE_TAG
 
 ADD entrypoint.sh /usr/bin/entrypoint.sh
 
-RUN apk add iptables socat wireguard-tools
+RUN apk add iptables socat wireguard-tools iperf3
 
 ENV NOTEWORTHY_ENV $RELEASE_TAG
 ENV LINK_MTU=1380
