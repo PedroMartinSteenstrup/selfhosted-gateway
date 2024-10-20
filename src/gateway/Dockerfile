@@ -1,4 +1,4 @@
-FROM nginx
+FROM nginx:1.27-bookworm
 
 # Dynamic HTTP
 ADD http.conf.template /etc/nginx/templates/http.conf.template
