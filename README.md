@@ -1,10 +1,32 @@
-# Self-hosted Gateway
+## A new version is under development
+Interested in getting involved with world changing open source software?
+Check out the next (WIP) iteration of this project: https://github.com/fractalnetworksco/fractal-link
 
+## Self-hosted Gateway
 **Jump to [Getting Started](#getting-started)**
+## Features and Benefits
+- Docker native self-hosted alternative to Cloudflare Tunnels, Tailscale Funnel, ngrok and others.
+- Entirely self-hosted and self-managed, includes local and remote tunneling components.
+- No custom code, this project leverages existing battled tested FOSS components:
+  - WireGuard
+  - Nginx (Gateway)
+  - Caddy (Client)
+- Automatic client side HTTPS cert provisioning thanks to Caddy's automatic https.
+- Remote client IPs passed to local container via proxy protocol
+- Enable basic authentication by specifying env variable containing username and password
+- Proxy generic TCP/UDP traffic to localhost with socat
 
-This project automates the provisioning of a **Reverse Proxy-over-VPN (RPoVPN)** using WireGuard, Caddy and NGINX. It provides a self-hosted alternative to Cloudflare Tunnels, Tailscale Funnel or ngrok and is suitable for exposing services defined in a `docker-compose` file. There's no code or APIs, just a generic NGINX config and a short bash script. It automatically provisions TLS certs with Caddy's Automatic HTTPS feature via Let's Encrypt.
+## Video Overview & Setup Guide
+<a href="http://www.youtube.com/watch?feature=player_embedded&v=VCH8-XOikQc" target="_blank">
+ <img src="http://img.youtube.com/vi/VCH8-XOikQc/0.jpg" alt="Watch the video" width="560" height="315" border="10" />
+</a>
 
-## Benefits
+
+## Overview
+
+This project automates the provisioning of **Reverse Proxy-over-VPN (RPoVPN)** WireGuard tunnels with Caddy and NGINX. It is particularly well suited for exposing docker compose services defined in a `docker-compose` file to the public Internet. There's no code or APIs, just an ultra generic NGINX config and some short provisioning bash script. TLS certs are provisioned automatically with Caddy's Automatic HTTPS feature via Let's Encrypt or ZeroSSL.
+
+## Use cases
 
 1. **RPoVPN is a common strategy for remotely accessing applications self-hosted at home. It solves problems such as:**
   - Self-hosting behind double-NAT or via an ISP that does CGNAT (Starlink, Mobile Internet).
@@ -12,26 +34,27 @@ This project automates the provisioning of a **Reverse Proxy-over-VPN (RPoVPN)**
   - Having a dynamically allocated IP that may change frequently.
 
 2. **Using RPoVPN is ideal for self-hosting from both a network security and privacy perspective:**
-  - Prevents the need to expose your home public IP address to the world.
-  - Utilises the advanced network isolation capabilities of Docker (via Linux network namespaces) to isolate your self-hosted services from your home network and your other docker self-hosted services.
+  - Obviates the need for a static IP or expose your home's public IP address to the world.
+  - Utilizes advanced network isolation capabilities of Docker (thanks to Linux network namespaces) in order to isolate locally exposed services from your home network and other local docker services.
   - Built on open-source technologies (WireGuard, Caddy and NGINX).
 
 ## Getting Started
 
 ### Prerequisites
-
-- Ability to create an `A` record for a domain name.
-- A Linux host to act as the `gateway`, typically a cloud VPS (Hetzner, Digital Ocean, etc..) with the following requirements:
-  - Open ports 80/443 (http(s)).
-  - UDP port range listed `/proc/sys/net/ipv4/ip_local_port_range` exposed to the internet.
-  - SSH access to the `gateway`.
-  - `docker`, `git` & `make` installed.
-- Server with one or more services defined in a `docker-compose.yml` that you would like to expose to the internet.
-- A local machine to run the commands on. This may also be the server where the exposed services will run.
-  - `docker`, `git` & `make` installed on the local machine.
+- Domain
+  - Ability to create an `A` record for a domain name.
+- Gateway 
+  - A publicly addressable Linux host to act as the `gateway`, typically a cloud VPS (Hetzner, Digital Ocean, etc..) with the following requirements:
+  - SSH access
+  - Ports 80/443 open (http/https)
+  - The UDP port range listed by `cat /proc/sys/net/ipv4/ip_local_port_range` open to the Internet.
+  - `docker`, `git` & `make` installed on the Gateway
+- Client
+  - An existing `docker-compose.yml` that you would like to expose to the Internet.
+  - `docker`, `git` & `make` installed locally
 
 ### Steps
-
+#### Gateway
 1. Point `*.mydomain.com` (DNS A Record) to the IPv4 & IPv6 address of your VPS Gateway host.
 
 2. Connect to the `gateway` via SSH and setup the `gateway` service:
@@ -41,12 +64,13 @@ foo@gateway:~/selfhosted-gateway$ make docker
 foo@gateway:~/selfhosted-gateway$ make setup
 foo@gateway:~/selfhosted-gateway$ make gateway
 ```
-
-3. On your local machine, generate a `link` and the required `docker-compose.yml` snippet:
+#### Client
+3. To generate a `link` docker compose snippet run the following commands from the `client`:
 ```console
 foo@local:~$ git clone ... && cd selfhosted-gateway
 foo@local:~/selfhosted-gateway$ make docker
 foo@local:~/selfhosted-gateway$ make link GATEWAY=root@123.456.789.101 FQDN=nginx.mydomain.com EXPOSE=nginx:80
+# docker compose --env-file ./nginx-mydomain-com.env ...
   link:
     image: fractalnetworks/gateway-client:latest
     environment:
@@ -58,28 +82,46 @@ foo@local:~/selfhosted-gateway$ make link GATEWAY=root@123.456.789.101 FQDN=ngin
     cap_add:
       - NET_ADMIN
 ```
-
-4. Add the generated snippet to your `docker-compose.yml` file:
-```yaml
-version: '3.9'
-services:
-  nginx:
-    image: nginx:latest
-  link:
-    image: fractalnetworks/gateway-client:latest
-    environment:
-      LINK_DOMAIN: nginx.mydomain.com
-      EXPOSE: nginx:80
-      GATEWAY_CLIENT_WG_PRIVKEY: 4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
-      GATEWAY_LINK_WG_PUBKEY: Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
-      GATEWAY_ENDPOINT: 123.456.789.101:49185
-    cap_add:
-      - NET_ADMIN
+The command will also generate a `.env` file in your current directory:
+```console
+foo@local:~/selfhosted-gateway$ cat ./nginx-mydomain-com.env
+EXPOSE=nginx:80
+GATEWAY_ENDPOINT=123.456.789.101:49185
+GATEWAY_LINK_WG_PUBKEY=Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
+LINK_DOMAIN=nginx.mydomain.com
+WG_PRIVKEY=4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
 ```
 
-5. Run `docker compose up -d`. This will established the `link` to the `gateway` and negotiate a TLS-certificate via Let's Encrypt. After ~1 minute, your service should be securely accessible via `https://nginx.mydomain.com/`
+4. Add the `link` service to your existing `docker-compose.yml` file:
+  * by copy-pasting the output from the previous command:
+    ```yaml
+    version: '3.9'
+    services:
+      nginx:
+        image: nginx:latest
+      link:
+        image: fractalnetworks/gateway-client:latest
+        environment:
+          LINK_DOMAIN: nginx.mydomain.com
+          EXPOSE: nginx:80
+          GATEWAY_CLIENT_WG_PRIVKEY: 4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
+          GATEWAY_LINK_WG_PUBKEY: Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
+          GATEWAY_ENDPOINT: 123.456.789.101:49185
+        cap_add:
+          - NET_ADMIN
+    ```
+  * or by inserting the template snippet from [`src/create-link/link-compose-snippet.yml`](src/create-link/link-compose-snippet.yml).  
+    In this case, you will need to specify the `.env` file to use when running `docker-compose` commands:
+    ```console
+    foo@local:~/selfhosted-gateway$ docker compose --env-file ./nginx-mydomain-com.env up -d
+    ```
 
-You may repeat steps 3-5 for as many services as you would like to expose using the same gateway.
+    See [Docker Compose documentation "Substitute environment variables with an .env file"](https://docs.docker.com/compose/environment-variables/set-environment-variables/#substitute-with-an-env-file) for more information.
+
+5. Start your docker compose project as you would normally (`docker compose up -d`).  
+
+This will establish the `link` to the `gateway` and automatically provision a TLS-certificate.  
+**You may repeat steps 3-5 for as many services as you would like to expose using the same gateway**
 
 ## Extra
 
@@ -135,25 +177,47 @@ traefikv2_link.1.qvijxtwiu0wb@docker01    | + socat TCP4-LISTEN:8443,fork,reusea
 traefikv2_link.1.qvijxtwiu0wb@docker01    | + socat TCP4-LISTEN:8080,fork,reuseaddr TCP4:app:80,reuseaddr
 ```
 
+### TLS Backend
+
+If the backend container already has a TLS certification, the connection between Caddy and the backend container can be switched to TLS/HTTPS with the `CADDY_TLS_PROXY` parameter.
+In case the certificate is self-signed, the addition `CADDY_TLS_INSECURE` can be used to deactivate the certificate check.
+
+This will continue to create a certificate for the backend via Let's Encrypt.
+
+```yaml
+version: '3.9'
+services:
+  app:
+    image: traefik:latest
+  link:
+    image: fractalnetworks/gateway-client:latest
+    environment:
+      LINK_DOMAIN: sub.mydomain.com
+      EXPOSE:  https://app:80
+      CADDY_TLS_PROXY: true
+      # Optional
+      # CADDY_TLS_INSECURE: true
+      GATEWAY_CLIENT_WG_PRIVKEY: 4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
+      GATEWAY_LINK_WG_PUBKEY: Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
+      GATEWAY_ENDPOINT: 5.161.127.102:49185
+    cap_add:
+      - NET_ADMIN
+```
+
 ### Show all links running on a Gateway
 ```
 $ docker ps
 ```
 
-### Limitations
-
-- Currently only IPv4 is supported
-- Raw UDP proxying is supported but is currently untested & undocumented, see bottom of `gateway/link-entrypoint.sh`.
-
 ### FAQ
 
 - How is this better than setting up nginx and WireGuard myself on a VPS?
 
-The goal of this project is to self-hosting more accessible and reproducible. This selfhosted-gateway leverages a "ZeroTrust" network architecture (see diagram above). Each "Link" provides a dedicated WireGuard tunnel that is isolated from other containers and the underlying. This isolation is provided by Docker Compose's creation of a private Docker network for each compose file (project).
+The goal of this project is to make self-hosting more accessible and reproducible. This project leverages a "ZeroTrust" network architecture. Each "Link" provides a dedicated WireGuard tunnel that is isolated from other containers and the underlying host. This isolation is provided by Docker Compose's creation of a private Docker network for each compose project.
 
 - Can I still access the service from my local network?
 
-You will need to expose ports in your Docker host as you would traditionally, but this is no longer necessary:
+Yes, just expose ports in your Docker host as you would normally:
 ```
 ports:
  - 80:80

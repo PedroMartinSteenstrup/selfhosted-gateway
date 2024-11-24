@@ -1,0 +1,18 @@
+version: '3.9'
+
+networks:
+  gateway:
+      external: true
+
+services:
+  nginx:
+    image: nginx:latest
+    networks:
+      - gateway
+    depends_on:
+      - link
+    # health check nginx
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost"]
+      timeout: 1s
+      interval: 1s

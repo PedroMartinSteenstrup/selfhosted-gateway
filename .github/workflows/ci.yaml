@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - '**' # This will run the workflow on every push to any branch
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run CI tests for subdomain.domain.tld 
+      run: make link-ci GATEWAY=gateway-sshd FQDN=subdomain.domain.com
+
+    - name: Run CI tests for app.subdomain.domain.tld
+      run: make link-ci GATEWAY=gateway-sshd FQDN=app.subdomain.domain.com
