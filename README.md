@@ -1,7 +1,3 @@
-## A new version is under development
-Interested in getting involved with world changing open source software?
-Check out the next (WIP) iteration of this project: https://github.com/fractalnetworksco/fractal-link
-
 ## Self-hosted Gateway
 **Jump to [Getting Started](#getting-started)**
 ## Features and Benefits
