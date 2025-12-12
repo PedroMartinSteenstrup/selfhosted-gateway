@@ -20,6 +20,15 @@ server {
 	    return 200 "target: $target \napp: $app - subdomain: $subdomain - domain: $domain.$tld";
 	}
 
+	# ACME challenge - NO AUTH
+    location ^~ /.well-known/acme-challenge/ {
+        resolver 127.0.0.11;
+        proxy_pass $target;
+        proxy_set_header Host            $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        # No auth_basic!
+    }
+
 
 	location / {
                 auth_basic           "Administrator’s Area";
