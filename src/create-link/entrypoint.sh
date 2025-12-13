@@ -45,9 +45,9 @@ export CONTAINER_NAME
 GATEWAY_IP=$(getent ahostsv4 "$LINK_DOMAIN" | awk '{print $1; exit}')
 
 LINK_CLIENT_WG_PUBKEY=$(echo $WG_PRIVKEY|wg pubkey)
-#LINK_ENV=$(ssh $SSH_HOST "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY)
+# LINK_ENV=$(ssh -o StrictHostKeyChecking=accept-new $SSH_HOST -p $SSH_PORT "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY > /dev/null 2>&1)
 #LINK_ENV=$(ssh -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR $SSH_HOST -p $SSH_PORT "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY $GATEWAY_NETWORK)
-LINK_ENV=$(ssh $SSH_HOST -p 2220 -i /root/.ssh/raspi2staging "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY)
+LINK_ENV=$(ssh -o LogLevel=ERROR $SSH_HOST -p 2220 -i /root/.ssh/raspi2staging "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY $GATEWAY_NETWORK)
 
 # convert to array
 RESULT=($LINK_ENV)
