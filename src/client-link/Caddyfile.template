@@ -17,7 +17,7 @@ $LINK_DOMAIN {
     # optional basic authentication
     $BASIC_AUTH_CONFIG
 
-    # optional internal tls
+    # optional tls: mounted cert (TLS_CERT_FILE) or internal (TLS_INTERNAL), else ACME
     $TLS_INTERNAL_CONFIG
 
     reverse_proxy $EXPOSE

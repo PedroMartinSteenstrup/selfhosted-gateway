@@ -82,8 +82,11 @@ END
         )
     fi
     export BASIC_AUTH_CONFIG
-    # if TLS_INTERNAL is set export TLS_INTERNAL_CONFIG
-    if [ ! -z ${TLS_INTERNAL+x} ]; then
+    # TLS_CERT_FILE/TLS_KEY_FILE: use a mounted cert (e.g. Cloudflare Origin CA) and skip ACME, which can't
+    # validate behind the Cloudflare proxy. Otherwise TLS_INTERNAL: self-signed. Otherwise: ACME as usual.
+    if [ ! -z ${TLS_CERT_FILE+x} ]; then
+        TLS_INTERNAL_CONFIG="tls ${TLS_CERT_FILE} ${TLS_KEY_FILE}"
+    elif [ ! -z ${TLS_INTERNAL+x} ]; then
         TLS_INTERNAL_CONFIG=$(cat <<-END
         tls internal
 END
