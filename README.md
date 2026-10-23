@@ -1,5 +1,7 @@
 ## Self-hosted Gateway
 **Jump to [Getting Started](#getting-started)**
+
+How a request flows through Cloudflare, the gateway and the link: [docs/architecture.md](docs/architecture.md)
 ## Features and Benefits
 - Docker native self-hosted alternative to Cloudflare Tunnels, Tailscale Funnel, ngrok and others.
 - Entirely self-hosted and self-managed, includes local and remote tunneling components.
