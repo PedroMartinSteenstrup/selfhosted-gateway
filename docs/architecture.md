@@ -14,7 +14,7 @@ flowchart LR
     end
 
     subgraph vps["Gateway VPS (docker network: gateway)"]
-        nginx["selfhosted-gateway (nginx)<br/>:443 stream: SNI preread, TLS passthrough,<br/>adds PROXY protocol<br/>:80 http: basic auth, ACME path open"]
+        nginx["selfhosted-gateway (nginx)<br/>:443 stream: SNI preread, TLS passthrough,<br/>adds PROXY protocol<br/>:80 http: proxied to the link<br/>(redirects to https)"]
         glink["gateway-link<br/>container named after the domain<br/>(app.example.com → app-example-com)<br/>wg 10.0.0.1, DNAT 443→10.0.0.2:8443, 80→:8080"]
     end
 
@@ -65,13 +65,12 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     c(["client"]) -- "HTTP :80" --> h["nginx http server<br/>Host → http://app-example-com"]
-    h -- "/.well-known/acme-challenge/*<br/>no auth" --> l80["gateway-link :80<br/>DNAT → 10.0.0.2:8080"]
-    h -- "everything else<br/>auth_basic (.htpasswd)" --> l80
+    h -- "/.well-known/acme-challenge/*<br/>and everything else" --> l80["gateway-link :80<br/>DNAT → 10.0.0.2:8080"]
     l80 -- WireGuard --> caddy["client-link Caddy :8080<br/>redirects to https"]
 ```
 
-The basic auth realm "Administrator's Area" only shows up on plain `http://`. With Cloudflare's "Always Use HTTPS",
-clients never reach it.
+Port 80 has no auth of its own: 443 is TLS passthrough, so a gateway login could only ever cover plain `http://`,
+which the link redirects to https anyway. Turn on Cloudflare's "Always Use HTTPS" so clients never reach it.
 
 ## TLS on the link (client-link)
 

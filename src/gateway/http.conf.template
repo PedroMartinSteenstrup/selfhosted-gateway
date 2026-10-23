@@ -20,20 +20,18 @@ server {
 	    return 200 "target: $target \napp: $app - subdomain: $subdomain - domain: $domain.$tld";
 	}
 
-	# ACME challenge - NO AUTH
+	# ACME http-01 challenge
     location ^~ /.well-known/acme-challenge/ {
         resolver 127.0.0.11;
         proxy_pass $target;
         proxy_set_header Host            $host;
         proxy_set_header X-Forwarded-For $remote_addr;
-        # No auth_basic!
     }
 
 
+	# no auth here: it only ever covered plain http (443 is TLS passthrough), the apps do their own.
+	# Behind Cloudflare, "Always Use HTTPS" keeps clients off port 80 altogether.
 	location / {
-                auth_basic           "Administrator’s Area";
-                auth_basic_user_file /var/www/.htpasswd;
-
 		# First attempt to serve request as file, then
 		# as directory, then fall back to displaying a 404.
 		#try_files $uri $uri/ =404;

@@ -11,6 +11,3 @@ RUN rm /var/log/nginx/access.log /var/log/nginx/error.log
 # Create files that fail2ban will be watching
 RUN touch /var/log/nginx/acces.log && touch /var/log/nginx/error.log
 
-RUN mkdir /var/www/
-
-ADD .htpasswd /var/www/.htpasswd
