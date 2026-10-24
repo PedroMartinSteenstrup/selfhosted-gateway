@@ -42,8 +42,10 @@ export WG_PRIVKEY
 CONTAINER_NAME=$(fqdn_to_container_name "$LINK_DOMAIN")
 export CONTAINER_NAME
 
-# get gateway access ipv4 address
-GATEWAY_IP=$(getent ahostsv4 "$LINK_DOMAIN" | awk '{print $1; exit}')
+# WireGuard endpoint: the ssh target is the gateway, so use its address. Not the DNS of LINK_DOMAIN, which is a
+# Cloudflare IP when the domain is proxied. GATEWAY_ENDPOINT_HOST overrides (e.g. ssh through a jump host).
+GATEWAY_HOST=${GATEWAY_ENDPOINT_HOST:-${SSH_HOST#*@}}
+GATEWAY_IP=$(getent ahostsv4 "$GATEWAY_HOST" | awk '{print $1; exit}')
 
 LINK_CLIENT_WG_PUBKEY=$(echo $WG_PRIVKEY|wg pubkey)
 

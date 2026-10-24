@@ -152,8 +152,8 @@ checks that other commands are refused.
 **Review the snippet before using it:**
 - The generated snippet turns on `BASIC_AUTH: admin:admin` and `TLS_INTERNAL: true` (a self-signed cert). Change
   or remove both. See [Client link configuration](#client-link-configuration) for the TLS options.
-- The host in `GATEWAY_ENDPOINT` comes from resolving `FQDN`, not from `GATEWAY`. If the domain is proxied by
-  Cloudflare it resolves to a Cloudflare IP, and you must replace it with the VPS IP by hand.
+- The host in `GATEWAY_ENDPOINT` is the address of `GATEWAY` (the ssh target). If you reach the gateway's ssh
+  through another address, set `GATEWAY_ENDPOINT_HOST=<VPS IP>`.
 
 The command also writes a `.env` file to your current directory:
 ```console
@@ -409,7 +409,6 @@ Compared to upstream:
 
 ## Known issues
 
-- **`GATEWAY_ENDPOINT` uses the DNS of `FQDN`**, which is a Cloudflare IP when the domain is proxied. Fix it by hand.
 - **`.env` / snippet mismatch**: the `.env` file defines `GATEWAY_CLIENT_WG_PRIVKEY`, the snippet template reads
   `${WG_PRIVKEY}`.
 - **Generic UDP proxying is not reachable.** `gateway-link` relays UDP 18522/18523 to the client, but only the

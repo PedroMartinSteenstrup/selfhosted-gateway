@@ -30,11 +30,11 @@ gateway: docker
 
 link:
 	$(CHECK_SSH_KEY)
-	docker run -e GATEWAY_NETWORK=$(GATEWAY_NETWORK) $${SSH_AUTH_SOCK:+-e SSH_AUTH_SOCK=$$SSH_AUTH_SOCK -v $$SSH_AUTH_SOCK:$$SSH_AUTH_SOCK} $(LINK_MOUNTS) --rm -it fractalnetworks/gateway-cli:latest $(GATEWAY) $(FQDN) $(EXPOSE)
+	docker run -e GATEWAY_NETWORK=$(GATEWAY_NETWORK) $(if $(GATEWAY_ENDPOINT_HOST),-e GATEWAY_ENDPOINT_HOST=$(GATEWAY_ENDPOINT_HOST)) $${SSH_AUTH_SOCK:+-e SSH_AUTH_SOCK=$$SSH_AUTH_SOCK -v $$SSH_AUTH_SOCK:$$SSH_AUTH_SOCK} $(LINK_MOUNTS) --rm -it fractalnetworks/gateway-cli:latest $(GATEWAY) $(FQDN) $(EXPOSE)
 
 link-macos:
 	$(CHECK_SSH_KEY)
-	docker run -v /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock -e GATEWAY_NETWORK=$(GATEWAY_NETWORK) -e SSH_AUTH_SOCK="/run/host-services/ssh-auth.sock" $(LINK_MOUNTS) --rm -it fractalnetworks/gateway-cli:latest $(GATEWAY) $(FQDN) $(EXPOSE)
+	docker run -v /run/host-services/ssh-auth.sock:/run/host-services/ssh-auth.sock -e GATEWAY_NETWORK=$(GATEWAY_NETWORK) $(if $(GATEWAY_ENDPOINT_HOST),-e GATEWAY_ENDPOINT_HOST=$(GATEWAY_ENDPOINT_HOST)) -e SSH_AUTH_SOCK="/run/host-services/ssh-auth.sock" $(LINK_MOUNTS) --rm -it fractalnetworks/gateway-cli:latest $(GATEWAY) $(FQDN) $(EXPOSE)
 
 link-ci:
 	./ci/create-link-ci.sh $(GATEWAY) $(FQDN) nginx:80
