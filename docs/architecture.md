@@ -109,8 +109,9 @@ sequenceDiagram
     Note over C: docker compose up -d link<br/>keep the client private key out of git (.env)
 ```
 
-- The SSH connection currently always uses port 2220 and the key baked into the `gateway-cli` image
-  (`/root/.ssh/raspi2staging`), see the README's known issues.
+- The SSH login uses the key given as `SSH_KEY` (mounted read-only for that run, never in the image) or the
+  ssh-agent, and the port from `GATEWAY=host:port`. `~/.ssh/known_hosts` is mounted so a changed gateway host key is
+  rejected. This login only creates links, the tunnel's security comes from the per-link WireGuard keys.
 - The host part of `GATEWAY_ENDPOINT` comes from resolving the link's domain, not from the SSH target. With the
   domain proxied by Cloudflare that is a Cloudflare IP, so replace it with the VPS IP: WireGuard has to reach the VPS
   directly.

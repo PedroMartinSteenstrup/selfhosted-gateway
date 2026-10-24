@@ -45,9 +45,20 @@ export CONTAINER_NAME
 GATEWAY_IP=$(getent ahostsv4 "$LINK_DOMAIN" | awk '{print $1; exit}')
 
 LINK_CLIENT_WG_PUBKEY=$(echo $WG_PRIVKEY|wg pubkey)
-# LINK_ENV=$(ssh -o StrictHostKeyChecking=accept-new $SSH_HOST -p $SSH_PORT "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY > /dev/null 2>&1)
-#LINK_ENV=$(ssh -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR $SSH_HOST -p $SSH_PORT "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY $GATEWAY_NETWORK)
-LINK_ENV=$(ssh -o LogLevel=ERROR $SSH_HOST -p 2220 -i /root/.ssh/raspi2staging "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY $GATEWAY_NETWORK)
+
+SSH_OPTS=(-o LogLevel=ERROR -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+# known_hosts mounted read-only by `make link`: a gateway whose host key changed is rejected, unknown ones are trusted on first use
+if [[ -f /run/secrets/known_hosts ]]; then
+  cp /run/secrets/known_hosts /root/.ssh/known_hosts
+fi
+# dedicated gateway key mounted read-only by `make link SSH_KEY=...`, copied so ssh accepts its permissions.
+# IdentitiesOnly: offer only this key, also when it is loaded in the forwarded ssh-agent (passphrase-protected keys)
+if [[ -f /run/secrets/ssh_key ]]; then
+  install -m 600 /run/secrets/ssh_key /root/.ssh/gateway_key
+  SSH_OPTS+=(-i /root/.ssh/gateway_key -o IdentitiesOnly=yes)
+fi
+
+LINK_ENV=$(ssh "${SSH_OPTS[@]}" $SSH_HOST "bash -s" -- < ./remote.sh $CONTAINER_NAME $LINK_CLIENT_WG_PUBKEY $GATEWAY_NETWORK)
 
 # convert to array
 RESULT=($LINK_ENV)
