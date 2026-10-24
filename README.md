@@ -15,7 +15,7 @@ TLS certs on the link (e.g. Cloudflare Origin CA) and is tuned for a gateway VPS
   - Caddy (Client)
 - TLS is terminated on the client (home) side, the gateway only routes by SNI and never decrypts traffic.
 - Client side certs via Caddy's automatic HTTPS, a self-signed internal CA, or a mounted cert file.
-- Remote client IPs passed to the client link via PROXY protocol (HTTPS only, plain HTTP gets `X-Forwarded-For`).
+- The gateway sends a PROXY protocol header on 443 so the link can see the client's IP (see [Known issues](#known-issues)).
 - Optional basic authentication and mTLS on the client link.
 - `FORWARD_ONLY` mode: raw TCP forwarding of 80/443 with socat, for an existing reverse proxy that does its own TLS.
 
@@ -79,7 +79,8 @@ foo@gateway:~/selfhosted-gateway$ make gateway   # builds all images, then start
 host (for fail2ban).
 
 #### Client
-3. Build the images, then generate a `link` docker compose snippet from the `client`:
+3. Build the images, then create the link from the `client`. This logs in to the gateway over SSH (see
+   [Gateway SSH key](#gateway-ssh-key)), starts the gateway-link container there and prints a compose snippet:
 ```console
 foo@local:~$ git clone ... && cd selfhosted-gateway
 foo@local:~/selfhosted-gateway$ make docker
@@ -105,32 +106,87 @@ foo@local:~/selfhosted-gateway$ make link GATEWAY=root@203.0.113.10:22 SSH_KEY=~
       - NET_ADMIN
 ...
 ```
-On macOS (Docker Desktop) use `make link-macos` instead, it mounts Docker Desktop's SSH agent socket.
+   On macOS (Docker Desktop) use `make link-macos` instead, it mounts Docker Desktop's SSH agent socket.
 
-#### Gateway SSH key
+   It also writes the link's values to `./nginx-mydomain-com.env`, owner-only (`600`) and owned by you:
+```console
+foo@local:~/selfhosted-gateway$ cat ./nginx-mydomain-com.env
+EXPOSE=nginx:80
+GATEWAY_ENDPOINT=203.0.113.10:49185
+GATEWAY_LINK_WG_PUBKEY=Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
+LINK_DOMAIN=nginx.mydomain.com
+GATEWAY_CLIENT_WG_PRIVKEY=4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
+```
+   It holds the client's WireGuard private key: keep it out of git.
+
+   **Review before using it:**
+   - The snippet turns on `BASIC_AUTH: admin:admin` and `TLS_INTERNAL: true` (a self-signed cert). Change or remove
+     both, see [Client link configuration](#client-link-configuration) for the TLS options.
+   - The host in `GATEWAY_ENDPOINT` is the address of `GATEWAY` (the ssh target), not the DNS of `FQDN`, which is a
+     Cloudflare IP when the domain is proxied. If you reach the gateway's ssh through another address, set
+     `GATEWAY_ENDPOINT_HOST=<VPS IP>`.
+
+4. Add the `link` service to your `docker-compose.yml`. The `.env` uses exactly the variable names the link reads, so
+   the simplest is to copy it next to the compose file as `link.env` and load it with `env_file`. Your compose file
+   then holds no keys or ports, and re-linking only replaces that file:
+    ```yaml
+    services:
+      nginx:
+        image: nginx:latest
+      link:
+        image: fractalnetworks/gateway-client:latest
+        env_file:
+          - link.env   # LINK_DOMAIN, EXPOSE, GATEWAY_*, the WireGuard key: from make link
+        environment:   # anything else, e.g. the TLS mode. Don't repeat link.env's variables here, they'd win
+          TLS_CERT_FILE: /certs/origin.pem
+          TLS_KEY_FILE: /certs/origin.key
+        restart: unless-stopped
+        cap_add:
+          - NET_ADMIN
+        volumes:
+          - ./certs:/certs:ro
+          - caddy_data:/data   # keeps certs across restarts
+    volumes:
+      caddy_data:
+    ```
+   Pasting the printed snippet into `environment:` works as well, but then the private key is in your compose file.
+
+   The images are built locally under the upstream `fractalnetworks/*` names. Run `make docker` on every host that
+   uses them (or build `src/client-link` alone on the client), as pulling `fractalnetworks/gateway-client:latest`
+   from Docker Hub gets upstream's image without this fork's changes.
+
+5. Start your docker compose project as you would normally (`docker compose up -d`).
+
+This establishes the `link` to the `gateway` and provisions a TLS certificate.
+**You may repeat steps 3-5 for as many services as you would like to expose using the same gateway**
+
+### Gateway SSH key
 
 `make link` logs in to the gateway over SSH to create the gateway-link container, so whoever holds that login can
 add links (and run docker) on the gateway. Use a dedicated key for it:
 
 - `SSH_KEY=<path>` mounts the key read-only into the `gateway-cli` container for that one run. It is never copied
-  into the image or the repo, so the image can be rebuilt anywhere, and only `-i <that key>` is offered
-  (`IdentitiesOnly`). A passphrase-protected key works too: load it in `ssh-agent` (the agent socket is forwarded)
-  or type the passphrase when asked.
-- Without `SSH_KEY`, the keys in your `ssh-agent` are used.
+  into the image or the repo, and only that key is offered (`IdentitiesOnly`).
+- **Key in an ssh agent** (1Password, a passphrase-protected key, a hardware key): point `SSH_KEY` at the *public*
+  key. ssh then asks the forwarded agent to sign with that key only, and the private key never touches the disk. The
+  agent is the one in `SSH_AUTH_SOCK`.
+- Without `SSH_KEY`, every key in your `ssh-agent` is offered.
 - The SSH port goes in `GATEWAY`: `GATEWAY=root@203.0.113.10:2220`.
 - `~/.ssh/known_hosts` is mounted read-only (override with `KNOWN_HOSTS=<path>`). A gateway whose host key changed is
-  rejected, an unknown one is trusted on first use.
+  rejected, an unknown one is trusted on first use. Use the same host name you ssh to, so the entry matches.
 
-Put per-machine defaults in a gitignored `local.mk` instead of repeating them:
+Put per-machine defaults in a gitignored `local.mk` instead of repeating them, e.g. with the key in 1Password:
 ```make
-GATEWAY = root@203.0.113.10:2220
-SSH_KEY = ~/.ssh/gateway_ed25519
+GATEWAY = fief@gateway.example.com:2220
+SSH_KEY = ~/.ssh/gateway_link.pub
+# 1Password's agent, when your shell's SSH_AUTH_SOCK is another agent
+export SSH_AUTH_SOCK := $(HOME)/.1password/agent.sock
 ```
 
 The SSH key only protects link *creation*. The tunnel itself is secured by the per-link WireGuard keys, which
 `make link` generates fresh each time and which never leave the two link containers and your `.env`.
 
-##### Restrict the key to link creation
+#### Restrict the key to link creation
 
 The SSH user on the gateway can run docker, which makes any login root-equivalent. Pin the `make link` key to
 [`gateway-link-command`](src/create-link/gateway-link-command.sh), so that key can only create *new* links. No shell,
@@ -149,63 +205,18 @@ runs its own root-owned copy of `remote.sh`, ignoring what the client sends. `re
 X11 forwarding. Add `from="<your IP>"` too if your home IP is static. CI runs its simulated gateway the same way and
 checks that other commands are refused.
 
-**Review the snippet before using it:**
-- The generated snippet turns on `BASIC_AUTH: admin:admin` and `TLS_INTERNAL: true` (a self-signed cert). Change
-  or remove both. See [Client link configuration](#client-link-configuration) for the TLS options.
-- The host in `GATEWAY_ENDPOINT` is the address of `GATEWAY` (the ssh target). If you reach the gateway's ssh
-  through another address, set `GATEWAY_ENDPOINT_HOST=<VPS IP>`.
+### Automating links
 
-The command also writes a `.env` file to your current directory:
-```console
-foo@local:~/selfhosted-gateway$ cat ./nginx-mydomain-com.env
-EXPOSE=nginx:80
-GATEWAY_ENDPOINT=203.0.113.10:49185
-GATEWAY_LINK_WG_PUBKEY=Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
-LINK_DOMAIN=nginx.mydomain.com
-GATEWAY_CLIENT_WG_PRIVKEY=4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
-```
-It holds the client's WireGuard private key: it is created owner-only (`600`) and owned by you, keep it out of git.
+`make link` needs no input apart from the agent's approval of the key, so it can run from a provisioning tool. The
+contract is the `.env` file:
 
-4. Add the `link` service to your existing `docker-compose.yml` file:
-  * by copy-pasting the output from the previous command:
-    ```yaml
-    services:
-      nginx:
-        image: nginx:latest
-      link:
-        image: fractalnetworks/gateway-client:latest
-        environment:
-          LINK_DOMAIN: nginx.mydomain.com
-          EXPOSE: nginx:80
-          GATEWAY_CLIENT_WG_PRIVKEY: 4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
-          GATEWAY_LINK_WG_PUBKEY: Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
-          GATEWAY_ENDPOINT: 203.0.113.10:49185
-        restart: unless-stopped
-        cap_add:
-          - NET_ADMIN
-        volumes:
-          - caddy_data:/data   # keeps certs across restarts
-    volumes:
-      caddy_data:
-    ```
-  * or by referencing the `.env` file with `${...}` variables and passing it to compose:
-    ```console
-    foo@local:~/selfhosted-gateway$ docker compose --env-file ./nginx-mydomain-com.env up -d
-    ```
-    Note that the `.env` file names the private key `GATEWAY_CLIENT_WG_PRIVKEY`, while
-    [`src/create-link/link-compose-snippet.yml`](src/create-link/link-compose-snippet.yml) still reads `${WG_PRIVKEY}`.
-    Use `${GATEWAY_CLIENT_WG_PRIVKEY}` in your compose file.
-
-    See [Docker Compose documentation "Substitute environment variables with an .env file"](https://docs.docker.com/compose/environment-variables/set-environment-variables/#substitute-with-an-env-file) for more information.
-
-  The images are built locally under the upstream `fractalnetworks/*` names. Run `make docker` on every host that
-  uses them, as pulling `fractalnetworks/gateway-client:latest` from Docker Hub gets upstream's image without this
-  fork's changes.
-
-5. Start your docker compose project as you would normally (`docker compose up -d`).
-
-This establishes the `link` to the `gateway` and provisions a TLS certificate.
-**You may repeat steps 3-5 for as many services as you would like to expose using the same gateway**
+- Run the `fractalnetworks/gateway-cli` container the way the `link` target does, without `-t`, and with
+  `-e WORKDIR_OWNER=<uid>:<gid>` so the file is owned by the user running the tool. The file is written to the
+  directory mounted at `/workdir`, named after the domain (`app.example.com` → `app-example-com.env`).
+- Keep that file as the link's source of truth and copy it to the client as `link.env`.
+- The gateway-link holds the other half of the keys inside its container, without a volume. If it's removed (or the
+  gateway rebuilt), or the `.env` is lost, the link can't be repaired: remove the gateway-link with an admin login
+  and run `make link` again, which creates new keys on both ends.
 
 ## Client link configuration
 
@@ -357,9 +368,22 @@ $ docker ps --filter ancestor=fractalnetworks/gateway-link:latest
 ```
 
 ### Remove a link
+On the gateway, with an admin login (the restricted `make link` key can't remove links):
 ```
 $ docker rm -f app-example-com
 ```
+Then stop the `link` service on the client and delete its `.env`.
+
+### Restricting 80/443 to Cloudflare
+If the gateway sits behind Cloudflare's proxy, only allow Cloudflare's ranges on 80/443, otherwise the origin can be
+reached (and identified) directly. Published docker ports bypass ufw, so filter in the `DOCKER-USER` chain, and match
+only connections opened from outside:
+```console
+iptables -I DOCKER-USER -i eth0 -p tcp -m conntrack --ctorigdstport 443 --ctdir ORIGINAL -j CLOUDFLARE-ONLY
+```
+Without `--ctdir ORIGINAL`, the replies to the containers' own outbound https connections match too (their original
+destination port is also 443), and containers on the gateway can't reach the internet, e.g. `apk` in docker builds
+fails with `TLS: unspecified error`.
 
 ### Debug routing
 `http://<any domain>/test` on port 80 answers with the container name the gateway would route to. It is public, so
@@ -404,13 +428,20 @@ Compared to upstream:
 - `TLS_CERT_FILE` / `TLS_KEY_FILE` on the client link for a mounted cert (e.g. Cloudflare Origin CA).
 - No basic auth on the gateway's port 80.
 - The gateway image is pinned to `nginx:1.29-bookworm`, logs to files for fail2ban, and publishes iperf3 on 5201.
-- `make link` takes a dedicated SSH key (`SSH_KEY`), mounted at run time, and checks `known_hosts`.
+- `make link` takes a dedicated SSH key (`SSH_KEY`, a private key or the public half of an agent's key), mounted at
+  run time, and checks `known_hosts`.
 - `gateway-link-command`: forced command that restricts the `make link` key to creating links.
+- `GATEWAY_ENDPOINT` comes from the ssh target, not the domain's DNS (a Cloudflare IP when proxied).
+- The link `.env` is written `600` and owned by the caller.
+- Client link on `caddy:2.10`, Dependabot for the base images and actions.
 
 ## Known issues
 
-- **`.env` / snippet mismatch**: the `.env` file defines `GATEWAY_CLIENT_WG_PRIVKEY`, the snippet template reads
-  `${WG_PRIVKEY}`.
+- **Client IP:** the app sees the link's tunnel address (`10.0.0.1`) in `X-Forwarded-For`, not the client's IP:
+  the PROXY protocol header the gateway sends on 443 doesn't take effect in the link's Caddy (seen with Caddy 2.8 and
+  2.10). Behind Cloudflare, use the `CF-Connecting-IP` header instead.
+- **`link-compose-snippet.yml`** reads `${WG_PRIVKEY}` while the `.env` names it `GATEWAY_CLIENT_WG_PRIVKEY`: use the
+  `.env` with `env_file` (step 4), not the template with `--env-file`.
 - **Generic UDP proxying is not reachable.** `gateway-link` relays UDP 18522/18523 to the client, but only the
   WireGuard port is published on the gateway.
 
