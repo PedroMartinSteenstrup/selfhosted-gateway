@@ -3,7 +3,7 @@
     environment:
       LINK_DOMAIN: ${LINK_DOMAIN}
       EXPOSE: ${EXPOSE}
-      GATEWAY_CLIENT_WG_PRIVKEY: ${WG_PRIVKEY}
+      GATEWAY_CLIENT_WG_PRIVKEY: ${GATEWAY_CLIENT_WG_PRIVKEY}
       GATEWAY_LINK_WG_PUBKEY: ${GATEWAY_LINK_WG_PUBKEY}
       GATEWAY_ENDPOINT: ${GATEWAY_ENDPOINT}
       # Remove following to disable basic authentication
