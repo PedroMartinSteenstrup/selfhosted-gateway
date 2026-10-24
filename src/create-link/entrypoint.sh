@@ -32,8 +32,8 @@ fi
 
 export LINK_DOMAIN=$2
 export EXPOSE=$3
-WG_PRIVKEY=$(wg genkey)
-export WG_PRIVKEY
+GATEWAY_CLIENT_WG_PRIVKEY=$(wg genkey)
+export GATEWAY_CLIENT_WG_PRIVKEY
 # Nginx uses Docker DNS resolver for dynamic mapping of LINK_DOMAIN to link container hostnames, see nginx/*.conf
 # This is the magic.
 # NOTE: All traffic for `*.subdomain.domain.tld`` will be routed to the container named `subdomain-domain-tld``
@@ -47,7 +47,7 @@ export CONTAINER_NAME
 GATEWAY_HOST=${GATEWAY_ENDPOINT_HOST:-${SSH_HOST#*@}}
 GATEWAY_IP=$(getent ahostsv4 "$GATEWAY_HOST" | awk '{print $1; exit}')
 
-LINK_CLIENT_WG_PUBKEY=$(echo $WG_PRIVKEY|wg pubkey)
+LINK_CLIENT_WG_PUBKEY=$(echo $GATEWAY_CLIENT_WG_PRIVKEY|wg pubkey)
 
 SSH_OPTS=(-o LogLevel=ERROR -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
 # known_hosts mounted read-only by `make link`: a gateway whose host key changed is rejected, unknown ones are trusted on first use

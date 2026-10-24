@@ -433,6 +433,8 @@ Compared to upstream:
 - `gateway-link-command`: forced command that restricts the `make link` key to creating links.
 - `GATEWAY_ENDPOINT` comes from the ssh target, not the domain's DNS (a Cloudflare IP when proxied).
 - The link `.env` is written `600` and owned by the caller.
+- `link-compose-snippet.yml` reads the client key as `GATEWAY_CLIENT_WG_PRIVKEY`, the `.env`'s name, so the template
+  works with `--env-file` (upstream reads `${WG_PRIVKEY}`).
 - Client link on `caddy:2.10`, Dependabot for the base images and actions.
 
 ## Known issues
@@ -440,8 +442,6 @@ Compared to upstream:
 - **Client IP:** the app sees the link's tunnel address (`10.0.0.1`) in `X-Forwarded-For`, not the client's IP:
   the PROXY protocol header the gateway sends on 443 doesn't take effect in the link's Caddy (seen with Caddy 2.8 and
   2.10). Behind Cloudflare, use the `CF-Connecting-IP` header instead.
-- **`link-compose-snippet.yml`** reads `${WG_PRIVKEY}` while the `.env` names it `GATEWAY_CLIENT_WG_PRIVKEY`: use the
-  `.env` with `env_file` (step 4), not the template with `--env-file`.
 - **Generic UDP proxying is not reachable.** `gateway-link` relays UDP 18522/18523 to the client, but only the
   WireGuard port is published on the gateway.
 
