@@ -1,4 +1,4 @@
-FROM caddy:2.8
+FROM caddy:2.10
 
 ARG RELEASE_TAG
 
