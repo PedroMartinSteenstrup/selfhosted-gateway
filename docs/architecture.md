@@ -109,6 +109,12 @@ sequenceDiagram
     Note over C: docker compose up -d link<br/>keep the client private key out of git (.env)
 ```
 
+- The SSH connection currently always uses port 2220 and the key baked into the `gateway-cli` image
+  (`/root/.ssh/raspi2staging`), see the README's known issues.
+- The host part of `GATEWAY_ENDPOINT` comes from resolving the link's domain, not from the SSH target. With the
+  domain proxied by Cloudflare that is a Cloudflare IP, so replace it with the VPS IP: WireGuard has to reach the VPS
+  directly.
+
 ## Naming
 
 The domain maps to a container name on the `gateway` network, the same way for the stream (443) and http (80)
@@ -126,3 +132,4 @@ servers:
   docker ports). Otherwise anyone can reach the origin directly and scanners can tie the domains to the VPS IP.
 - Use Origin CA certs on the links (not in Certificate Transparency logs) and SSL mode Full (strict).
 - Keep SSH and the per-link WireGuard UDP ports open.
+- `http://<domain>/test` on port 80 reveals the routing target, block it if that matters.

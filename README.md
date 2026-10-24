@@ -1,28 +1,40 @@
 ## Self-hosted Gateway
+
+Fork of [fractalnetworks/selfhosted-gateway](https://github.com/fractalnetworks/selfhosted-gateway). It adds mounted
+TLS certs on the link (e.g. Cloudflare Origin CA) and is tuned for a gateway VPS behind Cloudflare's proxy. See
+[Fork changes](#fork-changes) and [Known issues](#known-issues) before deploying.
+
 **Jump to [Getting Started](#getting-started)**
 
-How a request flows through Cloudflare, the gateway and the link: [docs/architecture.md](docs/architecture.md)
 ## Features and Benefits
 - Docker native self-hosted alternative to Cloudflare Tunnels, Tailscale Funnel, ngrok and others.
 - Entirely self-hosted and self-managed, includes local and remote tunneling components.
-- No custom code, this project leverages existing battled tested FOSS components:
+- No custom code, this project leverages existing battle tested FOSS components:
   - WireGuard
   - Nginx (Gateway)
   - Caddy (Client)
-- Automatic client side HTTPS cert provisioning thanks to Caddy's automatic https.
-- Remote client IPs passed to local container via proxy protocol
-- Enable basic authentication by specifying env variable containing username and password
-- Proxy generic TCP/UDP traffic to localhost with socat
+- TLS is terminated on the client (home) side, the gateway only routes by SNI and never decrypts traffic.
+- Client side certs via Caddy's automatic HTTPS, a self-signed internal CA, or a mounted cert file.
+- Remote client IPs passed to the client link via PROXY protocol (HTTPS only, plain HTTP gets `X-Forwarded-For`).
+- Optional basic authentication and mTLS on the client link.
+- `FORWARD_ONLY` mode: raw TCP forwarding of 80/443 with socat, for an existing reverse proxy that does its own TLS.
 
-## Video Overview & Setup Guide
+## Video Overview & Setup Guide (upstream)
 <a href="http://www.youtube.com/watch?feature=player_embedded&v=VCH8-XOikQc" target="_blank">
  <img src="http://img.youtube.com/vi/VCH8-XOikQc/0.jpg" alt="Watch the video" width="560" height="315" border="10" />
 </a>
 
-
 ## Overview
 
-This project automates the provisioning of **Reverse Proxy-over-VPN (RPoVPN)** WireGuard tunnels with Caddy and NGINX. It is particularly well suited for exposing docker compose services defined in a `docker-compose` file to the public Internet. There's no code or APIs, just an ultra generic NGINX config and some short provisioning bash script. TLS certs are provisioned automatically with Caddy's Automatic HTTPS feature via Let's Encrypt or ZeroSSL.
+This project automates the provisioning of **Reverse Proxy-over-VPN (RPoVPN)** WireGuard tunnels with Caddy and NGINX.
+It is particularly well suited for exposing docker compose services to the public Internet. There's no code or APIs,
+just a generic NGINX config and some short provisioning bash scripts.
+
+Each exposed domain gets its own `link`: a WireGuard tunnel between a `gateway-link` container on the VPS and a
+`client-link` container in your compose project. The client dials out, so nothing needs to be opened at home.
+
+See [docs/architecture.md](docs/architecture.md) for diagrams of the whole request chain, the TLS modes and the
+Cloudflare setup.
 
 ## Use cases
 
@@ -40,34 +52,40 @@ This project automates the provisioning of **Reverse Proxy-over-VPN (RPoVPN)** W
 
 ### Prerequisites
 - Domain
-  - Ability to create an `A` record for a domain name.
-- Gateway 
-  - A publicly addressable Linux host to act as the `gateway`, typically a cloud VPS (Hetzner, Digital Ocean, etc..) with the following requirements:
-  - SSH access
+  - Ability to create `A` records (and optionally `AAAA`) for the domain.
+- Gateway
+  - A publicly addressable Linux host to act as the `gateway`, typically a cloud VPS (Hetzner, Digital Ocean, etc..) with:
+  - SSH access (see [Known issues](#known-issues): `make link` currently connects on port **2220**)
   - Ports 80/443 open (http/https)
-  - The UDP port range listed by `cat /proc/sys/net/ipv4/ip_local_port_range` open to the Internet.
-  - `docker`, `git` & `make` installed on the Gateway
+  - The UDP port range listed by `cat /proc/sys/net/ipv4/ip_local_port_range` open to the Internet (one random
+    port per link, for WireGuard).
+  - `docker`, `git` & `make` installed
 - Client
   - An existing `docker-compose.yml` that you would like to expose to the Internet.
   - `docker`, `git` & `make` installed locally
+  - An SSH private key for the gateway, saved as `src/create-link/raspi2staging` before building (see
+    [Known issues](#known-issues)), and a running `ssh-agent` (the Makefile mounts `$SSH_AUTH_SOCK`).
 
 ### Steps
 #### Gateway
-1. Point `*.mydomain.com` (DNS A Record) to the IPv4 & IPv6 address of your VPS Gateway host.
+1. Point `*.mydomain.com` (DNS A record) to the IP address of your VPS gateway host.
 
-2. Connect to the `gateway` via SSH and setup the `gateway` service:
+2. Connect to the `gateway` via SSH and set up the `gateway` service:
 ```console
 foo@gateway:~$ git clone ... && cd selfhosted-gateway
-foo@gateway:~/selfhosted-gateway$ make docker
-foo@gateway:~/selfhosted-gateway$ make setup
-foo@gateway:~/selfhosted-gateway$ make gateway
+foo@gateway:~/selfhosted-gateway$ make setup     # creates the `gateway` docker network
+foo@gateway:~/selfhosted-gateway$ make gateway   # builds all images, then starts nginx
 ```
+`make gateway` publishes 80, 443 and 5201 (iperf3, for testing link throughput) and mounts `/var/log/nginx` from the
+host (for fail2ban).
+
 #### Client
-3. To generate a `link` docker compose snippet run the following commands from the `client`:
+3. Build the images, then generate a `link` docker compose snippet from the `client`:
 ```console
 foo@local:~$ git clone ... && cd selfhosted-gateway
+foo@local:~/selfhosted-gateway$ cp ~/.ssh/<gateway key> src/create-link/raspi2staging
 foo@local:~/selfhosted-gateway$ make docker
-foo@local:~/selfhosted-gateway$ make link GATEWAY=root@123.456.789.101 FQDN=nginx.mydomain.com EXPOSE=nginx:80
+foo@local:~/selfhosted-gateway$ make link GATEWAY=root@203.0.113.10 FQDN=nginx.mydomain.com EXPOSE=nginx:80
 # docker compose --env-file ./nginx-mydomain-com.env ...
   link:
     image: fractalnetworks/gateway-client:latest
@@ -76,24 +94,41 @@ foo@local:~/selfhosted-gateway$ make link GATEWAY=root@123.456.789.101 FQDN=ngin
       EXPOSE: nginx:80
       GATEWAY_CLIENT_WG_PRIVKEY: 4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
       GATEWAY_LINK_WG_PUBKEY: Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
-      GATEWAY_ENDPOINT: 123.456.789.101:49185
+      GATEWAY_ENDPOINT: 203.0.113.10:49185
+      # Remove following to disable basic authentication
+      BASIC_AUTH: admin:admin
+      # Remove following line to get certs from Let's Encrypt
+      TLS_INTERNAL: true
+      # CADDY_TLS_PROXY: true
+      # CADDY_TLS_INSECURE: true
+      # FORWARD_ONLY: true
+    restart: unless-stopped
     cap_add:
       - NET_ADMIN
+...
 ```
-The command will also generate a `.env` file in your current directory:
+On macOS (Docker Desktop) use `make link-macos` instead, it mounts Docker Desktop's SSH agent socket.
+
+**Review the snippet before using it:**
+- The generated snippet turns on `BASIC_AUTH: admin:admin` and `TLS_INTERNAL: true` (a self-signed cert). Change
+  or remove both. See [Client link configuration](#client-link-configuration) for the TLS options.
+- The host in `GATEWAY_ENDPOINT` comes from resolving `FQDN`, not from `GATEWAY`. If the domain is proxied by
+  Cloudflare it resolves to a Cloudflare IP, and you must replace it with the VPS IP by hand.
+
+The command also writes a `.env` file to your current directory:
 ```console
 foo@local:~/selfhosted-gateway$ cat ./nginx-mydomain-com.env
 EXPOSE=nginx:80
-GATEWAY_ENDPOINT=123.456.789.101:49185
+GATEWAY_ENDPOINT=203.0.113.10:49185
 GATEWAY_LINK_WG_PUBKEY=Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
 LINK_DOMAIN=nginx.mydomain.com
-WG_PRIVKEY=4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
+GATEWAY_CLIENT_WG_PRIVKEY=4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
 ```
+It holds the client's WireGuard private key, so keep it out of git.
 
 4. Add the `link` service to your existing `docker-compose.yml` file:
   * by copy-pasting the output from the previous command:
     ```yaml
-    version: '3.9'
     services:
       nginx:
         image: nginx:latest
@@ -104,44 +139,79 @@ WG_PRIVKEY=4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
           EXPOSE: nginx:80
           GATEWAY_CLIENT_WG_PRIVKEY: 4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
           GATEWAY_LINK_WG_PUBKEY: Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
-          GATEWAY_ENDPOINT: 123.456.789.101:49185
+          GATEWAY_ENDPOINT: 203.0.113.10:49185
+        restart: unless-stopped
         cap_add:
           - NET_ADMIN
+        volumes:
+          - caddy_data:/data   # keeps certs across restarts
+    volumes:
+      caddy_data:
     ```
-  * or by inserting the template snippet from [`src/create-link/link-compose-snippet.yml`](src/create-link/link-compose-snippet.yml).  
-    In this case, you will need to specify the `.env` file to use when running `docker-compose` commands:
+  * or by referencing the `.env` file with `${...}` variables and passing it to compose:
     ```console
     foo@local:~/selfhosted-gateway$ docker compose --env-file ./nginx-mydomain-com.env up -d
     ```
+    Note that the `.env` file names the private key `GATEWAY_CLIENT_WG_PRIVKEY`, while
+    [`src/create-link/link-compose-snippet.yml`](src/create-link/link-compose-snippet.yml) still reads `${WG_PRIVKEY}`.
+    Use `${GATEWAY_CLIENT_WG_PRIVKEY}` in your compose file.
 
     See [Docker Compose documentation "Substitute environment variables with an .env file"](https://docs.docker.com/compose/environment-variables/set-environment-variables/#substitute-with-an-env-file) for more information.
 
-5. Start your docker compose project as you would normally (`docker compose up -d`).  
+  The images are built locally under the upstream `fractalnetworks/*` names. Run `make docker` on every host that
+  uses them, as pulling `fractalnetworks/gateway-client:latest` from Docker Hub gets upstream's image without this
+  fork's changes.
 
-This will establish the `link` to the `gateway` and automatically provision a TLS-certificate.  
+5. Start your docker compose project as you would normally (`docker compose up -d`).
+
+This establishes the `link` to the `gateway` and provisions a TLS certificate.
 **You may repeat steps 3-5 for as many services as you would like to expose using the same gateway**
 
-## Extra
+## Client link configuration
 
-### Architecture
+Environment variables of the `link` service (`fractalnetworks/gateway-client`):
 
-<!-- TODO: Add a network diagram -->
+| Variable | Required | Description |
+|---|---|---|
+| `LINK_DOMAIN` | yes | Public domain of the service. Must match the gateway-link container name (dots → dashes). |
+| `EXPOSE` | yes | Upstream to proxy to, `service:port`. With `CADDY_TLS_PROXY`, e.g. `https://service:443`. |
+| `GATEWAY_CLIENT_WG_PRIVKEY` | yes | Client WireGuard private key (generated by `make link`). |
+| `GATEWAY_LINK_WG_PUBKEY` | yes | Gateway-link WireGuard public key (generated by `make link`). |
+| `GATEWAY_ENDPOINT` | yes | `<VPS IP>:<UDP port>` of the gateway-link. |
+| `LINK_MTU` | no | WireGuard MTU, default `1380`. Lower it if connections stall. |
+| `BASIC_AUTH` | no | `user:password` in plain text. It is hashed at startup. The password must not contain `:`. |
+| `TLS_CERT_FILE`, `TLS_KEY_FILE` | no | Paths (inside the container) of a mounted cert and key. Skips ACME. Set both. |
+| `TLS_INTERNAL` | no | Any value: use a self-signed cert from Caddy's internal CA. |
+| `TLS_INTERNAL_CONFIG` | no | Raw Caddy `tls` block, e.g. for mTLS. Overwritten if `TLS_CERT_FILE` or `TLS_INTERNAL` is set. |
+| `CADDY_TLS_PROXY` | no | Any value: talk TLS to the upstream. |
+| `CADDY_TLS_INSECURE` | no | Any value: skip upstream cert verification (with `CADDY_TLS_PROXY`). |
+| `FORWARD_ONLY` | no | Any value: disable Caddy and forward raw TCP with socat. |
+| `EXPOSE_HTTPS` | with `FORWARD_ONLY` | `service:port` that receives the 443 traffic. |
 
-```shell
-├── ...
-└── src
-    ├── client-link  # WireGuard instance for the client. Also handles SSL termination with Caddy
-    │   └── ...
-    ├── create-link  # CLI script for establishing a link.
-    │   └── ...
-    ├── gateway      # NGINX reverse proxy to distribute requests to each gateway-link instance.
-    │   └── ...
-    └── gateway-link # WireGuard instance for the gateway.
-        └── ...
+The boolean-style variables are checked for being *set*, not for their value, so `TLS_INTERNAL: false` also turns
+the option on. Remove the line to turn it off.
+
+### TLS certificates
+
+The link picks the first matching mode:
+
+1. `TLS_CERT_FILE` + `TLS_KEY_FILE`: a mounted cert, no ACME.
+2. `TLS_INTERNAL`: a self-signed cert.
+3. Otherwise ACME (Let's Encrypt, ZeroSSL fallback) via Caddy's automatic HTTPS.
+
+ACME only works while the domain resolves straight to the VPS. Behind Cloudflare's proxy, use a Cloudflare Origin CA
+cert with SSL mode "Full (strict)":
+
+```yaml
+  link:
+    environment:
+      TLS_CERT_FILE: /certs/origin.pem
+      TLS_KEY_FILE: /certs/origin.key
+    volumes:
+      - ./certs:/certs:ro
 ```
 
-### Terminology
-- `Link` - A dedicated WireGuard tunnel between a local container (client) and the remote container running on the Gateway through which Reverse Proxy traffic is routed. A link is comprised of 2 pieces, the local or client link and the gateway or remote link.
+[docs/architecture.md](docs/architecture.md#tls-on-the-link-client-link) compares the modes for each Cloudflare SSL setting.
 
 ### Split DNS without SSL Termination
 
@@ -152,7 +222,6 @@ In the event you already have a reverse proxy which performs SSL termination for
 3. In your compose file add an additional two variables: `EXPOSE_HTTPS` and `FORWARD_ONLY`
 
 ```yaml
-version: '3.9'
 services:
   app:
     image: traefik:latest
@@ -165,10 +234,13 @@ services:
       FORWARD_ONLY: "True"
       GATEWAY_CLIENT_WG_PRIVKEY: 4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
       GATEWAY_LINK_WG_PUBKEY: Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
-      GATEWAY_ENDPOINT: 5.161.127.102:49185
+      GATEWAY_ENDPOINT: 203.0.113.10:49185
     cap_add:
       - NET_ADMIN
 ```
+The gateway prepends a PROXY protocol header to every 443 connection, so the 443 entrypoint of your proxy must
+accept PROXY protocol (in Traefik: `entryPoints.<name>.proxyProtocol.trustedIPs`, with the link's IP).
+
 You will see logs from the link container indicating it is in forward only mode:
 ```
 traefikv2_link.1.qvijxtwiu0wb@docker01    | + socat TCP4-LISTEN:8443,fork,reuseaddr TCP4:app:443,reuseaddr
@@ -177,13 +249,12 @@ traefikv2_link.1.qvijxtwiu0wb@docker01    | + socat TCP4-LISTEN:8080,fork,reusea
 
 ### TLS Backend
 
-If the backend container already has a TLS certification, the connection between Caddy and the backend container can be switched to TLS/HTTPS with the `CADDY_TLS_PROXY` parameter.
-In case the certificate is self-signed, the addition `CADDY_TLS_INSECURE` can be used to deactivate the certificate check.
+If the backend container serves TLS itself, set `CADDY_TLS_PROXY` so Caddy connects to it over HTTPS. If its
+certificate is self-signed, also set `CADDY_TLS_INSECURE` to skip verification.
 
-This will continue to create a certificate for the backend via Let's Encrypt.
+Caddy still provisions the public certificate for `LINK_DOMAIN` as usual.
 
 ```yaml
-version: '3.9'
 services:
   app:
     image: traefik:latest
@@ -191,20 +262,20 @@ services:
     image: fractalnetworks/gateway-client:latest
     environment:
       LINK_DOMAIN: sub.mydomain.com
-      EXPOSE:  https://app:80
+      EXPOSE: https://app:443
       CADDY_TLS_PROXY: true
       # Optional
       # CADDY_TLS_INSECURE: true
       GATEWAY_CLIENT_WG_PRIVKEY: 4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
       GATEWAY_LINK_WG_PUBKEY: Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
-      GATEWAY_ENDPOINT: 5.161.127.102:49185
+      GATEWAY_ENDPOINT: 203.0.113.10:49185
     cap_add:
       - NET_ADMIN
 ```
 
 ### mTLS (client authentication)
 
-It is possible to use Mutual TLS authentication for client connections, which is useful to prevent MITM attacks and reducing attack vector when running possibly insecure software in your containers. 
+It is possible to use Mutual TLS authentication for client connections, which is useful to prevent MITM attacks and reducing attack vector when running possibly insecure software in your containers.
 
 You will need to create a self-signed CA certificate and sign X.509 client certificates, then use this snippet for your `compose.yaml`
 ```yaml
@@ -231,16 +302,84 @@ TLS_INTERNAL_CONFIG='tls {
     }'
 ```
 
-Now you won't be able to establish connections to your service withou your client certificate. There are other possible configuration values, of course, please have a look at the official [Caddy documentation](https://caddyserver.com/docs/caddyfile/directives/tls#client_auth). 
+Remove `TLS_INTERNAL` (which the generated snippet sets) and `TLS_CERT_FILE`, otherwise they replace this block.
 
-Keep in mind, this might effect any corporate firewall as there is no way to terminate TLS without breaking client authentication and therefor no way to connect for a client behind one of these appliances.
+Now you won't be able to establish connections to your service without your client certificate. There are other possible configuration values, of course, please have a look at the official [Caddy documentation](https://caddyserver.com/docs/caddyfile/directives/tls#client_auth).
+
+Keep in mind, this might affect any corporate firewall as there is no way to terminate TLS without breaking client authentication and therefore no way to connect for a client behind one of these appliances.
+
+## Gateway operations
 
 ### Show all links running on a Gateway
+Each link is a `gateway-link` container named after its domain (`app.example.com` → `app-example-com`):
 ```
-$ docker ps
+$ docker ps --filter ancestor=fractalnetworks/gateway-link:latest
 ```
 
-### FAQ
+### Remove a link
+```
+$ docker rm -f app-example-com
+```
+
+### Debug routing
+`http://<any domain>/test` on port 80 answers with the container name the gateway would route to. It is public, so
+block it if you don't want domain-to-container mapping exposed.
+
+### Logs
+nginx writes `/var/log/nginx/access.log` and `error.log`, mounted on the host for fail2ban.
+
+## Make targets
+
+| Target | Where | What |
+|---|---|---|
+| `make docker` | both | Build all four images under the `fractalnetworks/*:latest` names. |
+| `make setup` | gateway | Create the `gateway` docker network. |
+| `make gateway` | gateway | Build, then run the nginx gateway (80, 443, 5201). |
+| `make link GATEWAY=user@host FQDN=... EXPOSE=svc:port` | client | Create a gateway-link over SSH and print the client snippet. |
+| `make link-macos ...` | client | Same, using Docker Desktop's SSH agent socket. |
+| `make link-ci` | CI | End-to-end test with a simulated gateway (see `ci/`). |
+
+`GATEWAY_NETWORK=<name>` overrides the docker network name for `setup` and `link`.
+
+## Repository layout
+
+```shell
+├── ci/              # end-to-end test: simulated sshd gateway + nginx gateway + test link
+├── docs/            # architecture.md, diagrams of the request chain
+├── examples/ssh/    # proxying SSH through the gateway (FORWARD_ONLY + openssl s_client)
+└── src
+    ├── client-link  # WireGuard + Caddy on the client. TLS termination, basic auth, socat forward mode.
+    ├── create-link  # CLI (`make link`): generates keys, runs remote.sh on the gateway over SSH, prints the snippet.
+    ├── gateway      # NGINX: SNI passthrough on 443 (+PROXY protocol), Host-based proxy on 80.
+    └── gateway-link # WireGuard + iptables DNAT on the gateway, one container per link.
+```
+
+### Terminology
+- `Link` - A dedicated WireGuard tunnel between a local container (client) and the remote container running on the Gateway through which Reverse Proxy traffic is routed. A link is comprised of 2 pieces, the local or client link and the gateway or remote link.
+
+## Fork changes
+
+Compared to upstream:
+- `TLS_CERT_FILE` / `TLS_KEY_FILE` on the client link for a mounted cert (e.g. Cloudflare Origin CA).
+- No basic auth on the gateway's port 80.
+- The gateway image is pinned to `nginx:1.27-bookworm`, logs to files for fail2ban, and publishes iperf3 on 5201.
+- `make link` uses a fixed SSH key and port (see below).
+
+## Known issues
+
+- **`make link` SSH settings are hardcoded.** `src/create-link/entrypoint.sh` always connects on port `2220` with
+  the key `/root/.ssh/raspi2staging`. The Dockerfile copies that key from `src/create-link/raspi2staging`, which is
+  not in git, so `make docker` fails until you put a key there. A port given in `GATEWAY=host:port` and the forwarded
+  ssh-agent are ignored. The key ends up inside the `gateway-cli` image: never push that image.
+- **CI is broken** for the same reason: the build has no key, and the simulated gateway's sshd listens on port 22.
+- **`GATEWAY_ENDPOINT` uses the DNS of `FQDN`**, which is a Cloudflare IP when the domain is proxied. Fix it by hand.
+- **`.env` / snippet mismatch**: the `.env` file defines `GATEWAY_CLIENT_WG_PRIVKEY`, the snippet template reads
+  `${WG_PRIVKEY}`.
+- **Generic UDP proxying is not reachable.** `gateway-link` relays UDP 18522/18523 to the client, but only the
+  WireGuard port is published on the gateway.
+- `remote.sh` leaves an empty file named `NUL` in the SSH user's home directory on the gateway.
+
+## FAQ
 
 - How is this better than setting up nginx and WireGuard myself on a VPS?
 
@@ -255,6 +394,6 @@ ports:
  - 443:443
 ```
 
-### Support
+## Support
 
-Community support is available via our Matrix Channel https://matrix.to/#/#fractal:ether.ai
+Upstream community support is available via the Fractal Networks Matrix channel https://matrix.to/#/#fractal:ether.ai
