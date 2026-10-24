@@ -69,8 +69,12 @@ RESULT=($LINK_ENV)
 export GATEWAY_LINK_WG_PUBKEY="${RESULT[0]}"
 export GATEWAY_ENDPOINT="${GATEWAY_IP}:${RESULT[1]}"
 
-# save snippet variables to .env file
-cat link-compose-snippet.env | envsubst > "/workdir/${CONTAINER_NAME}.env"
+# save snippet variables to .env file: it holds the client's WireGuard private key, so owner-only, and owned by the
+# caller (WORKDIR_OWNER=uid:gid, set by `make link`) instead of root
+(umask 077; cat link-compose-snippet.env | envsubst > "/workdir/${CONTAINER_NAME}.env")
+if [[ -n "${WORKDIR_OWNER:-}" ]]; then
+  chown "$WORKDIR_OWNER" "/workdir/${CONTAINER_NAME}.env"
+fi
 echo "# docker compose --env-file ./${CONTAINER_NAME}.env ..."
 
 cat link-compose-snippet.yml | envsubst

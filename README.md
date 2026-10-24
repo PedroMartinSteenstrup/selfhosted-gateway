@@ -164,7 +164,7 @@ GATEWAY_LINK_WG_PUBKEY=Wipd6Pv7ttmII4/Oj82I5tmGZwuw6ucsE3G+hwsMR08=
 LINK_DOMAIN=nginx.mydomain.com
 GATEWAY_CLIENT_WG_PRIVKEY=4M7Ap0euzTxq7gTA/WIYIt3nU+i2FvHUc9eYTFQ2CGI=
 ```
-It holds the client's WireGuard private key, so keep it out of git.
+It holds the client's WireGuard private key: it is created owner-only (`600`) and owned by you, keep it out of git.
 
 4. Add the `link` service to your existing `docker-compose.yml` file:
   * by copy-pasting the output from the previous command:
