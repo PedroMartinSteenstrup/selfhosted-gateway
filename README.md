@@ -55,7 +55,7 @@ Cloudflare setup.
   - Ability to create `A` records (and optionally `AAAA`) for the domain.
 - Gateway
   - A publicly addressable Linux host to act as the `gateway`, typically a cloud VPS (Hetzner, Digital Ocean, etc..) with:
-  - SSH access (see [Known issues](#known-issues): `make link` currently connects on port **2220**)
+  - SSH access, ideally with a dedicated key (see [Gateway SSH key](#gateway-ssh-key))
   - Ports 80/443 open (http/https)
   - The UDP port range listed by `cat /proc/sys/net/ipv4/ip_local_port_range` open to the Internet (one random
     port per link, for WireGuard).
@@ -63,8 +63,7 @@ Cloudflare setup.
 - Client
   - An existing `docker-compose.yml` that you would like to expose to the Internet.
   - `docker`, `git` & `make` installed locally
-  - An SSH private key for the gateway, saved as `src/create-link/raspi2staging` before building (see
-    [Known issues](#known-issues)), and a running `ssh-agent` (the Makefile mounts `$SSH_AUTH_SOCK`).
+  - An SSH key that can log in to the gateway: a key file passed as `SSH_KEY`, or a key loaded in `ssh-agent`.
 
 ### Steps
 #### Gateway
@@ -83,9 +82,8 @@ host (for fail2ban).
 3. Build the images, then generate a `link` docker compose snippet from the `client`:
 ```console
 foo@local:~$ git clone ... && cd selfhosted-gateway
-foo@local:~/selfhosted-gateway$ cp ~/.ssh/<gateway key> src/create-link/raspi2staging
 foo@local:~/selfhosted-gateway$ make docker
-foo@local:~/selfhosted-gateway$ make link GATEWAY=root@203.0.113.10 FQDN=nginx.mydomain.com EXPOSE=nginx:80
+foo@local:~/selfhosted-gateway$ make link GATEWAY=root@203.0.113.10:22 SSH_KEY=~/.ssh/gateway_ed25519 FQDN=nginx.mydomain.com EXPOSE=nginx:80
 # docker compose --env-file ./nginx-mydomain-com.env ...
   link:
     image: fractalnetworks/gateway-client:latest
@@ -108,6 +106,33 @@ foo@local:~/selfhosted-gateway$ make link GATEWAY=root@203.0.113.10 FQDN=nginx.m
 ...
 ```
 On macOS (Docker Desktop) use `make link-macos` instead, it mounts Docker Desktop's SSH agent socket.
+
+#### Gateway SSH key
+
+`make link` logs in to the gateway over SSH to create the gateway-link container, so whoever holds that login can
+add links (and run docker) on the gateway. Use a dedicated key for it:
+
+- `SSH_KEY=<path>` mounts the key read-only into the `gateway-cli` container for that one run. It is never copied
+  into the image or the repo, so the image can be rebuilt anywhere, and only `-i <that key>` is offered
+  (`IdentitiesOnly`). A passphrase-protected key works too: load it in `ssh-agent` (the agent socket is forwarded)
+  or type the passphrase when asked.
+- Without `SSH_KEY`, the keys in your `ssh-agent` are used.
+- The SSH port goes in `GATEWAY`: `GATEWAY=root@203.0.113.10:2220`.
+- `~/.ssh/known_hosts` is mounted read-only (override with `KNOWN_HOSTS=<path>`). A gateway whose host key changed is
+  rejected, an unknown one is trusted on first use.
+
+Put per-machine defaults in a gitignored `local.mk` instead of repeating them:
+```make
+GATEWAY = root@203.0.113.10:2220
+SSH_KEY = ~/.ssh/gateway_ed25519
+```
+
+The SSH key only protects link *creation*. The tunnel itself is secured by the per-link WireGuard keys, which
+`make link` generates fresh each time and which never leave the two link containers and your `.env`.
+
+To restrict the key further, prefix it in the gateway's `authorized_keys` with
+`from="<your home IP>",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty`. `make link` needs neither a
+pty nor forwarding.
 
 **Review the snippet before using it:**
 - The generated snippet turns on `BASIC_AUTH: admin:admin` and `TLS_INTERNAL: true` (a self-signed cert). Change
@@ -335,11 +360,12 @@ nginx writes `/var/log/nginx/access.log` and `error.log`, mounted on the host fo
 | `make docker` | both | Build all four images under the `fractalnetworks/*:latest` names. |
 | `make setup` | gateway | Create the `gateway` docker network. |
 | `make gateway` | gateway | Build, then run the nginx gateway (80, 443, 5201). |
-| `make link GATEWAY=user@host FQDN=... EXPOSE=svc:port` | client | Create a gateway-link over SSH and print the client snippet. |
+| `make link GATEWAY=user@host[:port] [SSH_KEY=path] FQDN=... EXPOSE=svc:port` | client | Create a gateway-link over SSH and print the client snippet. |
 | `make link-macos ...` | client | Same, using Docker Desktop's SSH agent socket. |
 | `make link-ci` | CI | End-to-end test with a simulated gateway (see `ci/`). |
 
-`GATEWAY_NETWORK=<name>` overrides the docker network name for `setup` and `link`.
+`GATEWAY_NETWORK=<name>` overrides the docker network name for `setup` and `link`. `GATEWAY`, `SSH_KEY` and
+`KNOWN_HOSTS` can be set in a gitignored `local.mk`.
 
 ## Repository layout
 
@@ -362,16 +388,11 @@ nginx writes `/var/log/nginx/access.log` and `error.log`, mounted on the host fo
 Compared to upstream:
 - `TLS_CERT_FILE` / `TLS_KEY_FILE` on the client link for a mounted cert (e.g. Cloudflare Origin CA).
 - No basic auth on the gateway's port 80.
-- The gateway image is pinned to `nginx:1.27-bookworm`, logs to files for fail2ban, and publishes iperf3 on 5201.
-- `make link` uses a fixed SSH key and port (see below).
+- The gateway image is pinned to `nginx:1.29-bookworm`, logs to files for fail2ban, and publishes iperf3 on 5201.
+- `make link` takes a dedicated SSH key (`SSH_KEY`), mounted at run time, and checks `known_hosts`.
 
 ## Known issues
 
-- **`make link` SSH settings are hardcoded.** `src/create-link/entrypoint.sh` always connects on port `2220` with
-  the key `/root/.ssh/raspi2staging`. The Dockerfile copies that key from `src/create-link/raspi2staging`, which is
-  not in git, so `make docker` fails until you put a key there. A port given in `GATEWAY=host:port` and the forwarded
-  ssh-agent are ignored. The key ends up inside the `gateway-cli` image: never push that image.
-- **CI is broken** for the same reason: the build has no key, and the simulated gateway's sshd listens on port 22.
 - **`GATEWAY_ENDPOINT` uses the DNS of `FQDN`**, which is a Cloudflare IP when the domain is proxied. Fix it by hand.
 - **`.env` / snippet mismatch**: the `.env` file defines `GATEWAY_CLIENT_WG_PRIVKEY`, the snippet template reads
   `${WG_PRIVKEY}`.

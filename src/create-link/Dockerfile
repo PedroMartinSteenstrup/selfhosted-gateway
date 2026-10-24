@@ -2,11 +2,8 @@ FROM alpine:latest
 
 RUN apk add gettext openssh-client wireguard-tools;
 
-RUN mkdir -p /root/.ssh
-COPY raspi2staging /root/.ssh/raspi2staging
-
-RUN chmod 600 /root/.ssh/
-RUN ssh-keygen -y -f /root/.ssh/raspi2staging
+# the gateway ssh key and known_hosts are mounted at run time (see `make link`), never baked into the image
+RUN mkdir -p /root/.ssh && chmod 700 /root/.ssh
 
 COPY . /code
 
