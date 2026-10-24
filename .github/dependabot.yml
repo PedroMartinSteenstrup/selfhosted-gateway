@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # base images of the four images built by `make docker`, plus the ci and example images
+  - package-ecosystem: docker
+    directories:
+      - /src/client-link
+      - /src/create-link
+      - /src/gateway
+      - /src/gateway-link
+      - /ci
+      - /examples/ssh
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
