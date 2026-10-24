@@ -130,7 +130,8 @@ servers:
 ## Hardening behind Cloudflare
 
 - Only allow Cloudflare's IP ranges on 80/443 of the VPS (in the `DOCKER-USER` chain, ufw doesn't apply to published
-  docker ports). Otherwise anyone can reach the origin directly and scanners can tie the domains to the VPS IP.
+  docker ports). Otherwise anyone can reach the origin directly and scanners can tie the domains to the VPS IP. Match
+  `--ctdir ORIGINAL`, or the replies to the containers' own outbound http(s) are dropped too (see the README).
 - Use Origin CA certs on the links (not in Certificate Transparency logs) and SSL mode Full (strict).
 - Keep SSH and the per-link WireGuard UDP ports open.
 - `http://<domain>/test` on port 80 reveals the routing target, block it if that matters.
