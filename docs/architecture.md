@@ -111,10 +111,10 @@ sequenceDiagram
 
 - The SSH login uses the key given as `SSH_KEY` (mounted read-only for that run, never in the image) or the
   ssh-agent, and the port from `GATEWAY=host:port`. `~/.ssh/known_hosts` is mounted so a changed gateway host key is
-  rejected. This login only creates links, the tunnel's security comes from the per-link WireGuard keys.
-- The host part of `GATEWAY_ENDPOINT` comes from resolving the link's domain, not from the SSH target. With the
-  domain proxied by Cloudflare that is a Cloudflare IP, so replace it with the VPS IP: WireGuard has to reach the VPS
-  directly.
+  rejected. This login only creates links, the tunnel's security comes from the per-link WireGuard keys. With
+  `gateway-link-command` as the key's forced command, the key can't do anything else on the gateway.
+- The host part of `GATEWAY_ENDPOINT` is the SSH target's address (or `GATEWAY_ENDPOINT_HOST`), not the DNS of the
+  link's domain: behind Cloudflare that would be a Cloudflare IP, and WireGuard has to reach the VPS directly.
 
 ## Naming
 
