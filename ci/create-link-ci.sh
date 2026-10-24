@@ -35,6 +35,22 @@ function cleanup {
 trap cleanup ERR
 trap cleanup EXIT
 
+# The CI key is restricted to link creation (gateway-link-command): anything else must be refused
+echo "******************* Test the link key can't do anything else *******************"
+VALID_PUBKEY=$(docker run --rm --entrypoint sh fractalnetworks/gateway-cli:latest -c 'wg genkey | wg pubkey')
+function ssh_gateway {
+    docker run --network gateway -e SSH_AUTH_SOCK=$SSH_AUTH_SOCK -v $SSH_AUTH_SOCK:$SSH_AUTH_SOCK --rm --entrypoint ssh \
+        fractalnetworks/gateway-cli:latest -o StrictHostKeyChecking=accept-new -o LogLevel=ERROR $1 "${@:2}" < /dev/null
+}
+for denied in "docker ps" "bash -s -- ../x $VALID_PUBKEY gateway" "bash -s -- x $VALID_PUBKEY host" "bash -s -- x not-a-key gateway"; do
+    if out=$(ssh_gateway $1 "$denied" 2>&1) || ! grep -q "gateway-link-command" <<< "$out"; then
+        FAILED="true"
+        echo -e "\033[0;31m link key was allowed to run: $denied\033[0m"
+    else
+        echo -e "\033[0;32m link key refused: $denied ($out)\033[0m"
+    fi
+done
+
 # Default Link test
 normal_test_proceed=true
 if [ "$normal_test_proceed" = true ]; then

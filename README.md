@@ -130,9 +130,24 @@ SSH_KEY = ~/.ssh/gateway_ed25519
 The SSH key only protects link *creation*. The tunnel itself is secured by the per-link WireGuard keys, which
 `make link` generates fresh each time and which never leave the two link containers and your `.env`.
 
-To restrict the key further, prefix it in the gateway's `authorized_keys` with
-`from="<your home IP>",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty`. `make link` needs neither a
-pty nor forwarding.
+##### Restrict the key to link creation
+
+The SSH user on the gateway can run docker, which makes any login root-equivalent. Pin the `make link` key to
+[`gateway-link-command`](src/create-link/gateway-link-command.sh), so that key can only create *new* links. No shell,
+no other docker command, and existing links can't be replaced (removing a link still needs your admin login):
+
+```console
+# on the gateway, as root, from the repo checkout
+install -D -m 755 src/create-link/remote.sh /usr/local/lib/selfhosted-gateway/remote.sh
+install -m 755 src/create-link/gateway-link-command.sh /usr/local/sbin/gateway-link-command
+# ~/.ssh/authorized_keys of the ssh user, one line:
+command="/usr/local/sbin/gateway-link-command",restrict ssh-ed25519 AAAA... make link
+```
+
+The script only accepts the exact command `make link` sends, checks the link name, WireGuard key and network, and
+runs its own root-owned copy of `remote.sh`, ignoring what the client sends. `restrict` turns off pty, port, agent and
+X11 forwarding. Add `from="<your IP>"` too if your home IP is static. CI runs its simulated gateway the same way and
+checks that other commands are refused.
 
 **Review the snippet before using it:**
 - The generated snippet turns on `BASIC_AUTH: admin:admin` and `TLS_INTERNAL: true` (a self-signed cert). Change
@@ -390,6 +405,7 @@ Compared to upstream:
 - No basic auth on the gateway's port 80.
 - The gateway image is pinned to `nginx:1.29-bookworm`, logs to files for fail2ban, and publishes iperf3 on 5201.
 - `make link` takes a dedicated SSH key (`SSH_KEY`), mounted at run time, and checks `known_hosts`.
+- `gateway-link-command`: forced command that restricts the `make link` key to creating links.
 
 ## Known issues
 
@@ -398,7 +414,6 @@ Compared to upstream:
   `${WG_PRIVKEY}`.
 - **Generic UDP proxying is not reachable.** `gateway-link` relays UDP 18522/18523 to the client, but only the
   WireGuard port is published on the gateway.
-- `remote.sh` leaves an empty file named `NUL` in the SSH user's home directory on the gateway.
 
 ## FAQ
 

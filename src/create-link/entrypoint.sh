@@ -12,8 +12,9 @@ function fqdn_to_container_name() {
         return 1
     fi
 
-    # Replace all dots with dashes
+    # Replace all dots with dashes, lowercase (docker names, gateway-link-command)
     CONTAINER_NAME="${fqdn//./-}"
+    CONTAINER_NAME="${CONTAINER_NAME,,}"
 
     echo "$CONTAINER_NAME"
 }
