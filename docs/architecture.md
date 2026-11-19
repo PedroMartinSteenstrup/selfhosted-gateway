@@ -134,4 +134,3 @@ servers:
   `--ctdir ORIGINAL`, or the replies to the containers' own outbound http(s) are dropped too (see the README).
 - Use Origin CA certs on the links (not in Certificate Transparency logs) and SSL mode Full (strict).
 - Keep SSH and the per-link WireGuard UDP ports open.
-- `http://<domain>/test` on port 80 reveals the routing target, block it if that matters.

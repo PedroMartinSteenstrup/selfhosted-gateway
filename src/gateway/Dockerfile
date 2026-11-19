@@ -1,4 +1,6 @@
-FROM nginx:1.29-bookworm
+# >= 1.31.9 fixes nginx2root (CVE-2026-123634 hits resolver + variable proxy_pass, used here).
+# Floating patch tag: each rebuild (--pull) picks up the latest 1.31.x.
+FROM nginx:1.31-trixie
 
 # Dynamic HTTP
 ADD http.conf.template /etc/nginx/templates/http.conf.template

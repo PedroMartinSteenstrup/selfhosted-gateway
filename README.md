@@ -385,10 +385,6 @@ Without `--ctdir ORIGINAL`, the replies to the containers' own outbound https co
 destination port is also 443), and containers on the gateway can't reach the internet, e.g. `apk` in docker builds
 fails with `TLS: unspecified error`.
 
-### Debug routing
-`http://<any domain>/test` on port 80 answers with the container name the gateway would route to. It is public, so
-block it if you don't want domain-to-container mapping exposed.
-
 ### Logs
 nginx writes `/var/log/nginx/access.log` and `error.log`, mounted on the host for fail2ban.
 

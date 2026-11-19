@@ -15,11 +15,6 @@ server {
             set $target http://$domain-$tld;
 	}
 
-	location /test {
-	    add_header Content-Type text/plain;
-	    return 200 "target: $target \napp: $app - subdomain: $subdomain - domain: $domain.$tld";
-	}
-
 	# ACME http-01 challenge
     location ^~ /.well-known/acme-challenge/ {
         resolver 127.0.0.11;
