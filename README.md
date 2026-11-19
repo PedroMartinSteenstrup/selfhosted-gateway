@@ -431,7 +431,7 @@ Compared to upstream:
 - The link `.env` is written `600` and owned by the caller.
 - `link-compose-snippet.yml` reads the client key as `GATEWAY_CLIENT_WG_PRIVKEY`, the `.env`'s name, so the template
   works with `--env-file` (upstream reads `${WG_PRIVKEY}`).
-- Client link on `caddy:2.10`, Dependabot for the base images and actions.
+- Client link on `caddy:2.11`, Dependabot for the base images and actions.
 
 ## Known issues
 
