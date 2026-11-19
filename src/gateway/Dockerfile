@@ -1,4 +1,5 @@
-FROM nginx:1.29-bookworm
+# Pinned: >= 1.31.9 fixes nginx2root (CVE-2026-123634 hits resolver + variable proxy_pass, used here)
+FROM nginx:1.31.9-trixie
 
 # Dynamic HTTP
 ADD http.conf.template /etc/nginx/templates/http.conf.template
